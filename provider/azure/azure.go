@@ -265,52 +265,54 @@ func (p *AzureProvider) deleteRecords(ctx context.Context, deleted azureChangeMa
 func (p *AzureProvider) updateRecords(ctx context.Context, updated azureChangeMap) {
 	for zone, endpoints := range updated {
 		for _, ep := range endpoints {
-			name := p.recordSetNameForZone(zone, ep)
-			if !p.domainFilter.Match(ep.DNSName) {
-				log.Debugf("Skipping update of record %s because it was filtered out by the specified --domain-filter", ep.DNSName)
-				continue
-			}
-			if p.dryRun {
+			go func(ep *endpoint.Endpoint, zone string) {
+				name := p.recordSetNameForZone(zone, ep)
+				if !p.domainFilter.Match(ep.DNSName) {
+					log.Debugf("Skipping update of record %s because it was filtered out by the specified --domain-filter", ep.DNSName)
+					return
+				}
+				if p.dryRun {
+					log.Infof(
+						"Would update %s record named '%s' to '%s' for Azure DNS zone '%s'.",
+						ep.RecordType,
+						name,
+						ep.Targets,
+						zone,
+					)
+					return
+				}
+
 				log.Infof(
-					"Would update %s record named '%s' to '%s' for Azure DNS zone '%s'.",
+					"Updating %s record named '%s' to '%s' for Azure DNS zone '%s'.",
 					ep.RecordType,
 					name,
 					ep.Targets,
 					zone,
 				)
-				continue
-			}
 
-			log.Infof(
-				"Updating %s record named '%s' to '%s' for Azure DNS zone '%s'.",
-				ep.RecordType,
-				name,
-				ep.Targets,
-				zone,
-			)
-
-			recordSet, err := p.newRecordSet(ep)
-			if err == nil {
-				_, err = p.recordSetsClient.CreateOrUpdate(
-					ctx,
-					p.resourceGroup,
-					zone,
-					name,
-					dns.RecordType(ep.RecordType),
-					recordSet,
-					nil,
-				)
-			}
-			if err != nil {
-				log.Errorf(
-					"Failed to update %s record named '%s' to '%s' for DNS zone '%s': %v",
-					ep.RecordType,
-					name,
-					ep.Targets,
-					zone,
-					err,
-				)
-			}
+				recordSet, err := p.newRecordSet(ep)
+				if err == nil {
+					_, err = p.recordSetsClient.CreateOrUpdate(
+						ctx,
+						p.resourceGroup,
+						zone,
+						name,
+						dns.RecordType(ep.RecordType),
+						recordSet,
+						nil,
+					)
+				}
+				if err != nil {
+					log.Errorf(
+						"Failed to update %s record named '%s' to '%s' for DNS zone '%s': %v",
+						ep.RecordType,
+						name,
+						ep.Targets,
+						zone,
+						err,
+					)
+				}
+			}(ep, zone)
 		}
 	}
 }
